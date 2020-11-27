@@ -1,0 +1,79 @@
+---
+title: "ctg_34_135_deseq2"
+output: html_document
+---
+
+
+## Input parameters
+```{r}
+coldataFile <- "/Users/david/CTG_projects/bulkRNA/CTG_34_135/samplesheet_34_135_tmp.csv"
+countDataFile <- "/Users/david/CTG_projects/bulkRNA/CTG_34_135/CTG_output/Quant/2019_34_genename.featureCounts.txt"
+bamSuffix <- "_Aligned.sortedByCoord.out.bam"
+
+
+
+```
+
+
+## read sample sheet
+from the sample sheet sample_names are extracted
+These will be used to match columns in the counts data frame
+```{r}
+## colDatfile and path should be defined as input parameter
+coldata <- read.csv(coldataFile, as.is=T)
+str(coldata)
+
+## Quickfix - change hyphens "-" and spaces in Sample_Names to dot 
+# R will substitute hyphens (and spaces) in columns names to dots
+if(length(grep("-", coldata$Sample_Name))){
+  cat("Warning: Some Sample_Names contain hyphens '-'. Replacing these with dots '.'")
+  coldata$Sample_Name <- gsub("-",".",coldata$Sample_Name)
+}
+my_samples <- coldata$Sample_Name
+
+## check if duplicated Sample_Names
+if(any(duplicated(my_samples))) stop(cat("There are duplicate Sample_Name(s) in ", 
+                                     coldataFile, " \n ",
+                                     paste(my_samples[duplicated(my_samples)], collapse = "; ")))
+
+# check if any sample starts with numeric character
+chr_vec <- sapply(my_samples, function(x){
+  y <- substr(x, 1, 1)
+  !is.na(suppressWarnings(as.numeric(y)))
+  })
+if(any(chr_vec)) stop("There are Sample_Name(s) starting with numeric characters: ", paste(my_samples[chr_vec], collapse = "; "))
+
+```
+
+
+## Read and parse countDataFile into count martrix and feature annotation data frame
+```{r}
+
+countdata_table <- read.delim(file=countDataFile, comment="#", as.is=T)
+str(countdata_table)
+if(any(duplicated(colnames(countdata_table)))) stop("Duplicated coliumn names in countDataFile detected")
+colnames(countdata_table) <- gsub(bamSuffix, "", colnames(countdata_table))
+if(any(duplicated(colnames(countdata_table)))) stop("Duplicated coliumn names in countDataFile detected after bamSuffix removed")
+
+# match Sample_Names
+u <- match(my_samples, colnames(countdata_table))
+
+
+require(DESeq2)
+sessionInfo()
+
+## countDataFile should be defined as iunput parameter
+
+
+dds <- DESeqDataSetFromMatrix(countData = countDataFile,
+                              colData = coldata
+                              #design = ~ condition
+                              )
+
+
+
+
+
+```
+
+
