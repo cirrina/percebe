@@ -117,7 +117,7 @@ alias ...='cd ..; cd ..'
 
 ## shortcuts
 alias ctgscripts='cd ~/OneDrive\ -\ Lund\ University/CTG_scripts/'
-alias lunarc='ssh percebe@aurora-ls4.lunarc.lu.se'
+
 
 
 # >>> conda initialize >>>
