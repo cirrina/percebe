@@ -1,0 +1,33 @@
+---
+title: "GTFs"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+## Try use Genomic Features for a TxDb gencode GTF. For use at remote server
+```{r}
+
+require(GenomicFeatures)
+my_gtf <-"~/Resources/genomicData/hg38/annotation/gtf/gencode/v33/gencode.v33.annotation.gtf"
+my_tx <- makeTxDbFromGFF(file="~/Resources/genomicData/hg38/annotation/gtf/gencode/v33/gencode.v33.annotation.gtf")
+metadata(my_tx)[,]
+seqlevels(my_tx)
+
+GenomicFeatures::mapIdsToRanges()
+exons(my_tx)
+keytypes(my_tx)
+
+apa <- select(my_tx, keys="ENSG00000223972.5", keytype="GENEID")
+
+
+apa <- read.delim("~/Resources/genomicData/hg38/annotation/gtf/gencode/v33/gencode.v33.annotation.gtf", as.is=T)
+apa[1:20,     ]
+−−extraAttributes gene_name,gene_type
+
+```
+

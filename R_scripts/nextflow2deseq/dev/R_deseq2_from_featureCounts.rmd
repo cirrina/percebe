@@ -6,9 +6,10 @@ output: html_document
 
 ## Input parameters
 ```{r}
-coldataFile <- "/Users/david/CTG_projects/bulkRNA/CTG_34_135/samplesheet_34_135_tmp.csv"
+## note here use updated coldata file
+coldataFile <- "/Users/david/CTG_projects/bulkRNA/CTG_34_135/samplesheet_34_135_KA.csv"
 countDataFile <- "/Users/david/CTG_projects/bulkRNA/CTG_34_135/CTG_output/Quant/2019_34_genename.featureCounts.txt"
-bamSuffix <- "_Aligned.sortedByCoord.out.bam"
+bamSuffix <- "Aligned.sortedByCoord.out.bam"
 
 
 
@@ -57,22 +58,31 @@ if(any(duplicated(colnames(countdata_table)))) stop("Duplicated coliumn names in
 
 # match Sample_Names
 u <- match(my_samples, colnames(countdata_table))
+if(any(is.na(u))) stop("Problem matching Sample_Names from samplesheet to countdata_table; not all Sample_Names present in colnames of count data file")
+countMat <- countdata_table[,u]
+if(ncol(countMat) != length(my_samples)) stop("Problem matching Sample_Names from samplesheet to countdata_table; not all Sample_Names present in colnames of count data file")
+stopifnot(identical(colnames(countMat), my_samples))
+stopifnot(identical(colnames(countMat), coldata$Sample_Name))
+
+```
+
+### batch correction with combat-seq
+```{r}
+# BiocManager::install("sva")
+countMat
+coldata
+require(sva)
+batchGroup <- "Source_Name"
+
+batch <- factor(coldata[,batchGroup])
+countMatAdjusted <- sva::ComBat_seq(countMat, batch=batch, group=NULL)
 
 
-require(DESeq2)
-sessionInfo()
-
-## countDataFile should be defined as iunput parameter
+```
 
 
-dds <- DESeqDataSetFromMatrix(countData = countDataFile,
-                              colData = coldata
-                              #design = ~ condition
-                              )
-
-
-
-
+## DEseq2 import
+```{r}
 
 ```
 

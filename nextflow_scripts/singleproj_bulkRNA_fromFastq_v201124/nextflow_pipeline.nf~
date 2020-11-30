@@ -46,7 +46,7 @@ for ( line in allLines ) {
     if ( writeB ) {
 	newsheet.append(line + "\n")
     }
-    If (line.contains("[Data]")) {
+    if (line.contains("[Data]")) {
 	writeB = true
     }
 }
@@ -72,7 +72,7 @@ Channel
     .map { row -> tuple( row.Sample_ID, row.Sample_Name ) }
     .unique()
     .tap{infoSamples}
-    .into{ fastqc_ch; star_ch}
+    .into{fastqc_ch; star_ch; fcount_ch}
 
 infoSamples.subscribe{ println "Samples: $it" }
 
@@ -80,10 +80,10 @@ infoSamples.subscribe{ println "Samples: $it" }
 process fastqc {
 
 	input:
-	set sid, sname from fastqc_ch
+	set sid, sname, from fastqc_ch
 
         output:
-        val "x" into multiqc_fastqc
+        val sid into multiqc_fastqc
 	
 	"""
 
@@ -116,11 +116,11 @@ process STAR  {
     publishDir "${STARDIR}/", mode: 'copy', overwrite: true
 
     input:
-    set sid, sname from star_ch
+    set sid, sname, from star_ch
 
     output:
     set val(sname), file("${sname}*") into postStar
-    file "${sname}Aligned.sortedByCoord.out.bam" into count
+    file "${sname}_Aligned.sortedByCoord.out.bam" into count
 
     when:
     params.align
@@ -133,7 +133,7 @@ process STAR  {
     read2=\$(echo ${FQDIR}/$sid/${sname}_*R2*fastq.gz)
 
     # Check if fastq is not containing wildcards (due to sample fastq are not put in sample id folder
-    if [[ \${read1} == *"*R1*"* ]]; then
+    if [[ \{$read1} == *"*R1*"* ]]; then
        read1=\$(echo ${FQDIR}/${sname}_*R1*fastq.gz)
        read2=\$(echo ${FQDIR}/${sname}_*R2*fastq.gz)
     fi
@@ -164,7 +164,7 @@ process featureCounts {
 	file bams from count.collect()
 
 	output:
-	val "x" into postCount
+	val sid into postCount
 
 	when:
 	params.quant
@@ -173,9 +173,9 @@ process featureCounts {
 	 
  	mkdir -p  ${CNTDIR}
 
-        outfile=${CNTDIR}/${projectID}_geneid.featureCounts.txt
+        outfile=${CNTDIR}/${projectID}_genename.featureCounts.txt
 
-        featureCounts -T ${task.cpus} -t ${params.feature} -a ${gtf} -g gene_id  -o \${outfile} -p -s ${params.stranded} ${bams}
+        featureCounts -T ${task.cpus} -t ${params.feature} -a ${gtf} -g gene_name -o \${outfile} -p -s ${params.stranded} ${bams}
 
    
 	"""	
@@ -185,7 +185,7 @@ process featureCounts {
 process multiqc_postCount {
 
     input:
-    val x from postCount
+    val sid from postCount
 
     output:
     val "${projectID}_multiqc_report.html" into multiqc_outPostCount
@@ -207,7 +207,7 @@ process multiqc_postCount {
 process multiqc_preCount {
 
     input:
-    val x from multiqc_fastqc.unique()
+    val sid from multiqc_fastqc.unique()
 
     output:
     val "${projectID}_multiqc_report_fq.html" into multiqc_outPreCount
