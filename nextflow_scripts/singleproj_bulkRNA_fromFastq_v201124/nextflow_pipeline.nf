@@ -46,7 +46,7 @@ for ( line in allLines ) {
     if ( writeB ) {
 	newsheet.append(line + "\n")
     }
-    If (line.contains("[Data]")) {
+    if (line.contains("[Data]")) {
 	writeB = true
     }
 }
@@ -175,7 +175,7 @@ process featureCounts {
 
         outfile=${CNTDIR}/${projectID}_geneid.featureCounts.txt
 
-        featureCounts -T ${task.cpus} -t ${params.feature} -a ${gtf} -g gene_id  -o \${outfile} -p -s ${params.stranded} ${bams}
+        featureCounts -T ${task.cpus} -t ${params.feature} --extraAttributes gene_name,gene_type -a ${gtf} -g gene_id  -o \${outfile} -p -s ${params.stranded} ${bams}
 
    
 	"""	
@@ -207,7 +207,7 @@ process multiqc_postCount {
 process multiqc_preCount {
 
     input:
-    val x from multiqc_fastqc.unique()
+    val x from multiqc_fastqc.collect()
 
     output:
     val "${projectID}_multiqc_report_fq.html" into multiqc_outPreCount

@@ -3,16 +3,26 @@ title: "ctg_34_135_deseq2"
 output: html_document
 ---
 
+## Workspace
+```{r}
+require(DESeq2)
+require(sva)
+require(SummarizedExperiment)
+
+
+```
+
 
 ## Input parameters
 ```{r}
 ## note here use updated coldata file
-coldataFile <- "/Users/david/CTG_projects/bulkRNA/CTG_34_135/samplesheet_34_135_KA.csv"
-countDataFile <- "/Users/david/CTG_projects/bulkRNA/CTG_34_135/CTG_output/Quant/2019_34_genename.featureCounts.txt"
+coldataFile <- "/Users/david/CTG_projects/bulkRNA/CTG_34_135/sample_sheet.nf.csv"
+countDataFile <- "/Users/david/CTG_projects/bulkRNA/CTG_34_135/CTG_output/Quant_exAtt//2020_34_135_geneid.featureCounts_s2_exAtt.txt"
 bamSuffix <- "Aligned.sortedByCoord.out.bam"
-
-
-
+workDir <- "/Users/david/CTG_projects/bulkRNA/CTG_34_135/R"
+if(!dir.exists(workDir)) dir.create(workDir)
+dataDir <- file.path(workDir, "data")
+if(!dir.exists(dataDir)) dir.create(dataDir)
 ```
 
 
@@ -44,6 +54,9 @@ chr_vec <- sapply(my_samples, function(x){
   })
 if(any(chr_vec)) stop("There are Sample_Name(s) starting with numeric characters: ", paste(my_samples[chr_vec], collapse = "; "))
 
+## save samplesheet for R
+my_file <- file.path(dataDir, "coldata.rds")
+saveRDS(coldata, file=my_file)
 ```
 
 
@@ -59,26 +72,227 @@ if(any(duplicated(colnames(countdata_table)))) stop("Duplicated coliumn names in
 # match Sample_Names
 u <- match(my_samples, colnames(countdata_table))
 if(any(is.na(u))) stop("Problem matching Sample_Names from samplesheet to countdata_table; not all Sample_Names present in colnames of count data file")
+
+## create countMat and rowdata objects
 countMat <- countdata_table[,u]
+rowdata <- countdata_table[,-u]
+
+## Check if Geneid (colnames) contains no duplicates
+if(any(duplicated(rowdata$Geneid))) stop("Geneid columnn contains duplicates")
+rownames(countMat) <- rowdata$Geneid
+rownames(rowdata) <- rowdata$Geneid
+
+## Check integrity of rowdata (feature data table). Expects columns inherited from gtf in featureCounts
+gtf_columns <- c("Chr","Start","End","Strand","Length")
+if(!all(gtf_columns %in% colnames(rowdata))) stop("Not all expected gtf info columnns present in count matrix file")
+  
+
+## Chech integrity of count matrix (samples/columns should mathc samplenames from samplesheet)
 if(ncol(countMat) != length(my_samples)) stop("Problem matching Sample_Names from samplesheet to countdata_table; not all Sample_Names present in colnames of count data file")
 stopifnot(identical(colnames(countMat), my_samples))
 stopifnot(identical(colnames(countMat), coldata$Sample_Name))
 
+## Save files in R-format
+my_file <- file.path(dataDir, "countMatrix.rds")
+saveRDS(countMat, file=my_file)
+my_file <- file.path(dataDir, "rowdata.rds")
+saveRDS(rowdata, file=my_file)
 ```
 
-### batch correction with combat-seq
+
+## Build Summarized Experiment
 ```{r}
+??SummarizedExperiment::make
+
+```
+
+
+## ================================
+##  Route_A :: DESeq2 no filterings
+##  ===============================
+
+all gene_id's, regardless transcript type
+no batch correction
+
+```{r route A}
+require(DESeq2)
+require(vsn)
+require(hexbin)
+require(dplyr)
+require(ggplot2)
+require(pheatmap)
+require(RColorBrewer)
+require(glmpca)
+require(PoiClaClu)
+
+
+countMat <- readRDS(file.path(dataDir, "countMatrix.rds"))
+rowdata <- readRDS(file.path(dataDir, "rowdata.rds"))
+coldata <- readRDS(file.path(dataDir, "coldata.rds"))
+
+head(countMat)
+head(rowdata)
+head(coldata)
+
+coldata$Group
+dds <- DESeq2::DESeqDataSetFromMatrix(countData = countMat,
+                                 colData = coldata,
+                                 design = ~Group)
+
+rowData(dds) <- rowdata
+dds
+# dim: 60662 94 
+
+
+## basic filter rowsums >1
+  keep <- rowSums(counts(dds)) > 1
+  table(keep)
+  dds <- dds[keep,]
+  dds # dim: 44535 94 
+
+## at least 3 samples with a count of 10 or higher
+## keep <- rowSums(counts(dds) >= 10) >= 3
+
+  
+  ## plot values
+    lambda <- 10^seq(from = -1, to = 2, length = 1000)
+  cts <- matrix(rpois(1000*100, lambda), ncol = 100)
+  quartz()
+  vsn::meanSdPlot(cts, ranks = FALSE)
+    
+  log.cts.one <- log2(cts + 1)
+meanSdPlot(log.cts.one, ranks = FALSE)
+  
+#  The VST is much faster to compute and is less sensitive to high count outliers than the rlog. The rlog tends to work well on small datasets (n < 30), potentially outperforming the VST when there is a wide range of sequencing depth across samples (an order of magnitude difference). We therefore recommend the VST for medium-to-large datasets (n > 30). You can perform both transformations and compare the meanSdPlot or PCA plots generated, as described below.
+
+
+vsd <- DESeq2::vst(dds, blind = TRUE)
+head(assay(vsd), 3)
+
+rld <- rlog(dds, blind = FALSE)
+head(assay(rld), 3)
+
+# n the above function calls, we specified blind = FALSE, which means that differences between cell lines and treatment (the variables in the design) will not contribute to the expected variance-mean trend of the experiment. The experimental design is not used directly in the transformation, only in estimating the global amount of variability in the counts. For a fully unsupervised transformation, one can set blind = TRUE (which is the default).
+
+# For the log2 approach, we need to first estimate size factors to account for sequencing depth, and then specify normalized=TRUE
+
+# Sequencing depth correction is done automatically for the vst and rlog.
+
+
+
+
+
+dds <- estimateSizeFactors(dds)
+
+df <- bind_rows(
+  as.data.frame(log2(counts(dds, normalized=TRUE)[, 1:2]+1)) %>%
+         mutate(transformation = "log2(x + 1)"),
+  as.data.frame(assay(vsd)[, 1:2]) %>% mutate(transformation = "vst"))
+  # as.data.frame(assay(rld)[, 1:2]) %>% mutate(transformation = "rlog"))
+  
+colnames(df)[1:2] <- c("x", "y")  
+
+lvls <- c("log2(x + 1)", "vst")
+df$transformation <- factor(df$transformation, levels=lvls)
+
+g <- ggplot(df, aes(x = x, y = y)) + geom_hex(bins = 80) +
+  coord_fixed() + facet_grid( . ~ transformation)  
+g <- g + ggtitle(label = "Route_A:  DESeq only, all transcripts")
+g
+
+
+## Sample distances
+sampleDists <- dist(t(assay(vsd)))
+sampleDists
+
+
+sampleDistMatrix <- as.matrix( sampleDists )
+rownames(sampleDistMatrix) <- paste( vsd$dex, vsd$cell, sep = " - " )
+colnames(sampleDistMatrix) <- NULL
+
+my_pal <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+pheatmap::pheatmap(sampleDistMatrix,
+         clustering_distance_rows = sampleDists,
+         clustering_distance_cols = sampleDists,
+         col = my_pal)
+
+
+poisd <- PoiClaClu::PoissonDistance(t(counts(dds)))
+
+samplePoisDistMatrix <- as.matrix( poisd$dd )
+rownames(samplePoisDistMatrix) <- paste( dds$dex, dds$cell, sep=" - " )
+colnames(samplePoisDistMatrix) <- NULL
+pheatmap::pheatmap(samplePoisDistMatrix,
+         clustering_distance_rows = poisd$dd,
+         clustering_distance_cols = poisd$dd,
+         col = my_pal)
+
+
+
+```
+
+### PCA Plot
+
+```{r}
+colData(vsd)
+pcaData <- DESeq2::plotPCA(vsd, intgroup = c("Sample_Project", "Group"), returnData=T)
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+
+ggplot(pcaData, aes(x = PC1, y = PC2, color = Group, shape = Sample_Project)) +
+  geom_point(size =3) +
+  xlab(paste0("PC1: ", percentVar[1], "% variance")) +
+  ylab(paste0("PC2: ", percentVar[2], "% variance")) +
+  coord_fixed() +
+  ggtitle("PCA with VST data")
+
+
+```
+
+
+### PCA plot using Generalized PCA
+
+```{r}
+
+gpca <- glmpca(counts(dds), L=2)
+gpca.dat <- gpca$factors
+gpca.dat$Sample_Project <- dds$Sample_Project
+gpca.dat$Group <- dds$Group
+ggplot(gpca.dat, aes(x = dim1, y = dim2, color = Group, shape = Sample_Project)) +
+  geom_point(size =3) + coord_fixed() + ggtitle("glmpca - Generalized PCA")
+
+```
+
+
+
+
+
+
+### OPTION:: batch correction with combat-seq
+Batch correct using project_id (run 2019_34 vs 2020_135)
+Use replicate samples as internal control for batch correction
+```{r}
+# install.packages("BiocManager")
 # BiocManager::install("sva")
 countMat
 coldata
-require(sva)
-batchGroup <- "Source_Name"
+str(coldata)
+# batchGroupColumn <- "Sample_Source"
+batchGroupColumn <- "Sample_Project"
+biologyGroupColumn <- ""
 
-batch <- factor(coldata[,batchGroup])
+batch <- factor(coldata[,batchGroupColumn])
+group <- factor(coldata[,])
+  
 countMatAdjusted <- sva::ComBat_seq(countMat, batch=batch, group=NULL)
-
+# apa <- sva::ComBat(countMat, batch=batch)
 
 ```
+
+
+## OPTION :: only use protein coding genes 
+
+
+
 
 
 ## DEseq2 import
